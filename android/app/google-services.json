@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "381875405758",
+    "project_id": "roleplay-advisor",
+    "storage_bucket": "roleplay-advisor.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:381875405758:android:8d48f3550a2888ab676fef",
+        "android_client_info": {
+          "package_name": "com.example.roleplay_advisor"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "381875405758-gkur1o85ulmfb7iaq8sgq3e5bb8biq47.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.roleplay_advisor",
+            "certificate_hash": "a25de78c0a4c7e0b45a0d11b7b3a3967d5846bb6"
+          }
+        },
+        {
+          "client_id": "381875405758-5m28qgp8m9fjdunfcbujsq0pep7nb80e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmIDOy-aZ2lUMWD_UrvG4BSycjXsN0v5w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "381875405758-5m28qgp8m9fjdunfcbujsq0pep7nb80e.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
