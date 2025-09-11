@@ -11,7 +11,6 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
-/home/user/myapp/lib/.env
 
 # IntelliJ related
 *.iml
@@ -19,20 +18,24 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code
+.vscode/
+*.code-workspace
 
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
+.packages
 .pub-cache/
 .pub/
 /build/
 /coverage/
+
+# Web related
+lib/generated_plugin_registrant.dart
 
 # Symbolication related
 app.*.symbols
@@ -44,3 +47,194 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ========================================
+# 🔒 SENSITIVE DATA & API KEYS (CRITICAL)
+# ========================================
+
+# Environment variables & API keys
+.env
+.env.local
+.env.production
+.env.staging
+.env.development
+lib/.env
+**/lib/.env
+**/.env
+
+# API Keys and configuration files
+lib/config/api_keys.dart
+lib/config/secrets.dart
+lib/services/groq_api_key.dart
+lib/services/openai_key.dart
+api_keys.dart
+secrets.dart
+
+# ========================================
+# 🔥 FIREBASE & GOOGLE SERVICES
+# ========================================
+
+# Firebase configuration
+lib/firebase_options.dart
+google-services.json
+GoogleService-Info.plist
+firebase_app_id_file.json
+
+# Android Firebase
+android/app/google-services.json
+android/app/src/main/google-services.json
+
+# iOS Firebase  
+ios/Runner/GoogleService-Info.plist
+ios/firebase_app_id_file.json
+ios/Runner/firebase_app_id_file.json
+
+# ========================================
+# 📱 MOBILE PLATFORM SPECIFIC
+# ========================================
+
+# Android signing & keys
+android/key.properties
+android/app/upload-keystore.jks
+android/app/release-keystore.jks
+android/app/debug-keystore.jks
+*.keystore
+*.jks
+key.properties
+
+# Android build
+android/.gradle/
+android/captures/
+android/gradlew
+android/gradlew.bat
+android/local.properties
+android/app/src/main/res/values/strings.xml
+
+# iOS signing & certificates
+ios/Runner.xcworkspace/xcshareddata/
+ios/Runner/Info.plist.backup
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/flutter_export_environment.sh
+*.mobileprovision
+*.p8
+*.p12
+*.key
+*.cer
+*.certSigningRequest
+
+# ========================================
+# 🗄️ DATABASE & BACKEND
+# ========================================
+
+# Supabase
+supabase/.temp
+supabase/config.toml
+supabase/.env
+.supabase/
+
+# Database backups and exports
+*.sql.backup
+database_exports/
+db_backups/
+
+# ========================================
+# 🖼️ MEDIA & UPLOADS (for development)
+# ========================================
+
+# Test images and uploads
+test_images/
+uploads/
+temp_images/
+*.tmp
+*.temp
+
+# Large media files (add specific extensions if needed)
+# *.mp4
+# *.mov
+# *.avi
+
+# ========================================
+# 🛠️ DEVELOPMENT & DEBUG
+# ========================================
+
+# Debug and test files
+debug/
+logs/
+*.debug
+test_data/
+
+# Coverage reports
+coverage/
+lcov.info
+
+# ========================================
+# 📦 DEPENDENCIES & PACKAGES
+# ========================================
+
+# Node modules (if using any web components)
+node_modules/
+
+# Python cache (if using any Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ========================================
+# 🖥️ OS GENERATED FILES
+# ========================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+._.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+.nfs*
+
+# ========================================
+# 🎯 PROJECT SPECIFIC
+# ========================================
+
+# AI Advisor Chat specific files
+character_images/private/
+user_uploads/
+conversation_exports/private/
+analytics_data/
+
+# Backup files
+*.backup
+*.bak
+*.old
+
+# Temporary generated files
+lib/generated/
+assets/generated/
+
+# ========================================
+# 🚀 DEPLOYMENT & CI/CD
+# ========================================
+
+# CI/CD secrets
+.github/secrets/
+ci_secrets/
+deploy_keys/
+
+# Build artifacts
+*.apk
+*.aab
+*.ipa
+*.app
+
+# Release notes drafts
+release_notes_draft.md
+CHANGELOG_DRAFT.md
