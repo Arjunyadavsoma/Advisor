@@ -1,11 +1,8 @@
-// lib/pages/chat_page.dart - COMPLETE PRODUCTION VERSION WITH IMAGE SUPPORT
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/character.dart';
 import '../models/message.dart';
 import '../services/chat_service.dart';
-import '../services/image_service.dart';
 import '../auth/auth_service.dart';
 import 'conversation_history_page.dart';
 
@@ -23,10 +20,9 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
+class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
   final ChatService _chatService = ChatService();
   final AuthService _authService = AuthService();
-  final ImageService _imageService = ImageService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   
@@ -34,11 +30,16 @@ class _ChatPageState extends State<ChatPage> {
   int _chatCredits = 999999;
   bool _useStreaming = true;
   bool _isExistingConversation = false;
+  late AnimationController _typingAnimationController;
 
   @override
   void initState() {
     super.initState();
     _isExistingConversation = widget.existingConversationId != null;
+    _typingAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
     _initializeChat();
     _loadUserData();
   }
@@ -47,6 +48,7 @@ class _ChatPageState extends State<ChatPage> {
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    _typingAnimationController.dispose();
     _chatService.dispose();
     super.dispose();
   }
@@ -63,7 +65,7 @@ class _ChatPageState extends State<ChatPage> {
     try {
       final profile = await _authService.getCurrentUserProfile();
       setState(() {
-        _chatCredits = 999999;
+        _chatCredits = profile?['chatCredits'] ?? 999999;
       });
     } catch (e) {
       setState(() {
@@ -76,23 +78,13 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       _useStreaming = !_useStreaming;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_useStreaming ? 'Streaming mode ON' : 'Streaming mode OFF'),
-        backgroundColor: Colors.teal,
-      ),
-    );
+    _showSuccessSnackBar(_useStreaming ? 'Streaming mode ON' : 'Streaming mode OFF');
   }
 
   void _exportConversation() {
     final exportText = _chatService.exportConversationAsText();
     Clipboard.setData(ClipboardData(text: exportText));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Conversation copied to clipboard!'),
-        backgroundColor: Colors.teal,
-      ),
-    );
+    _showSuccessSnackBar('Conversation copied to clipboard!');
   }
 
   void _goToHistory() {
@@ -106,26 +98,32 @@ class _ChatPageState extends State<ChatPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Clear Conversation'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Clear Conversation',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
         content: const Text('Are you sure you want to clear this conversation? This will start a new chat.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
               _chatService.clearConversation();
               _initializeChat();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Conversation cleared'),
-                  backgroundColor: Colors.teal,
-                ),
-              );
+              _showSuccessSnackBar('Conversation cleared');
             },
-            child: const Text('Clear'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2196F3),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Clear', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -135,296 +133,304 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _reloadConversation() async {
     if (_chatService.isConversationPersisted) {
       await _chatService.reloadConversation();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Conversation reloaded'),
-          backgroundColor: Colors.teal,
-        ),
-      );
-    }
-  }
-
-  // 📸 IMAGE FUNCTIONALITY
-  Future<void> _handleImageSelection() async {
-    if (_isSending) return;
-    
-    try {
-      final imageFile = await _imageService.showImageSourceDialog(context);
-      
-      if (imageFile != null) {
-        // Validate image
-        if (!_imageService.isValidImage(imageFile)) {
-          _showError('Please select a valid image file (JPG, PNG, GIF, etc.)');
-          return;
-        }
-        
-        // Check file size (limit to 10MB)
-        final sizeInMB = await _imageService.getFileSizeInMB(imageFile);
-        if (sizeInMB > 10) {
-          _showError('Image too large. Please select an image under 10MB.');
-          return;
-        }
-        
-        await _sendImageMessage(imageFile);
-      }
-    } catch (e) {
-      _showError('Error selecting image: $e');
-    }
-  }
-
-  Future<void> _sendImageMessage(File imageFile) async {
-    if (_isSending) return;
-
-    setState(() => _isSending = true);
-    
-    try {
-      final message = _messageController.text.trim();
-      _messageController.clear();
-      
-      final response = await _chatService.sendImageMessage(
-        message,
-        imageFile,
-        widget.character,
-        useStreaming: _useStreaming,
-      );
-      
-      if (response != null) {
-        _scrollToBottom();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Image shared with ${widget.character.name}'),
-            backgroundColor: Colors.teal,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } else {
-        _showError('Failed to send image. Please try again.');
-      }
-    } catch (e) {
-      _showError('Error sending image: $e');
-    } finally {
-      setState(() => _isSending = false);
+      _showSuccessSnackBar('Conversation reloaded');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: SafeArea(
+        child: Column(
           children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundImage: widget.character.imageUrl?.isNotEmpty == true
-                  ? NetworkImage(widget.character.imageUrl!)
-                  : null,
-              backgroundColor: Colors.teal.shade100,
-              child: widget.character.imageUrl?.isEmpty ?? true
-                  ? Text(
-                      widget.character.name[0],
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.teal.shade700,
-                      ),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.character.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Text(
-                        widget.character.category,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.white70,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (_useStreaming)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            'STREAMING',
-                            style: TextStyle(
-                              fontSize: 8,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      if (_isExistingConversation) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            'RESUMED',
-                            style: TextStyle(
-                              fontSize: 8,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            _buildHeader(),
+            if (_chatService.isConversationPersisted) _buildConversationInfo(),
+            Expanded(child: _buildMessagesList()),
+            _buildMessageInput(),
           ],
         ),
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
-              switch (value) {
-                case 'streaming':
-                  _toggleStreaming();
-                  break;
-                case 'export':
-                  _exportConversation();
-                  break;
-                case 'history':
-                  _goToHistory();
-                  break;
-                case 'clear':
-                  _clearConversation();
-                  break;
-                case 'reload':
-                  _reloadConversation();
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'streaming',
-                child: Row(
-                  children: [
-                    Icon(_useStreaming ? Icons.stream : Icons.message, size: 18),
-                    const SizedBox(width: 8),
-                    Text(_useStreaming ? 'Disable Streaming' : 'Enable Streaming'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'export',
-                child: Row(
-                  children: [
-                    Icon(Icons.share, size: 18),
-                    SizedBox(width: 8),
-                    Text('Export Chat'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'history',
-                child: Row(
-                  children: [
-                    Icon(Icons.history, size: 18),
-                    SizedBox(width: 8),
-                    Text('Chat History'),
-                  ],
-                ),
-              ),
-              if (_chatService.isConversationPersisted)
-                const PopupMenuItem(
-                  value: 'reload',
-                  child: Row(
-                    children: [
-                      Icon(Icons.refresh, size: 18),
-                      SizedBox(width: 8),
-                      Text('Reload'),
-                    ],
-                  ),
-                ),
-              const PopupMenuItem(
-                value: 'clear',
-                child: Row(
-                  children: [
-                    Icon(Icons.clear_all, size: 18),
-                    SizedBox(width: 8),
-                    Text('Clear Chat'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '$_chatCredits credits',
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      body: Column(
+      child: Row(
         children: [
-          // Conversation info bar
-          if (_chatService.isConversationPersisted)
-            Container(
-              width: double.infinity,
-              color: Colors.teal.shade50,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(Icons.save, size: 16, color: Colors.teal.shade600),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Conversation saved • ${_chatService.messageCount} messages',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.teal.shade600,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    _isExistingConversation ? 'Resumed' : 'Auto-saved',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.teal.shade600,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+          // Back Button
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F9FA),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                size: 20,
+                color: Color(0xFF2196F3),
               ),
             ),
-          Expanded(
-            child: _buildMessagesList(),
           ),
-          _buildMessageInput(),
+          const SizedBox(width: 12),
+          
+          // Character Avatar
+          _buildCharacterAvatar(radius: 24),
+          const SizedBox(width: 12),
+          
+          // Character Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.character.name,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1A1A),
+                    letterSpacing: -0.3,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                
+                // Status badges
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _getCategoryColor(widget.character.category).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        widget.character.category,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: _getCategoryColor(widget.character.category),
+                        ),
+                      ),
+                    ),
+                    if (_useStreaming)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.circle, size: 4, color: Color(0xFF4CAF50)),
+                            SizedBox(width: 2),
+                            Text(
+                              'LIVE',
+                              style: TextStyle(
+                                fontSize: 8,
+                                color: Color(0xFF4CAF50),
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_isExistingConversation)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2196F3).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'RESUMED',
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: Color(0xFF2196F3),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          // Credits Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2196F3).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$_chatCredits',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2196F3),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          
+          // Menu Button
+          PopupMenuButton<String>(
+            onSelected: _handleMenuAction,
+            icon: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F9FA),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.more_vert_rounded,
+                color: Color(0xFF666666),
+                size: 18,
+              ),
+            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            itemBuilder: (context) => [
+              _buildMenuItem('streaming', _useStreaming ? Icons.stream_rounded : Icons.message_rounded, _useStreaming ? 'Disable Streaming' : 'Enable Streaming'),
+              _buildMenuItem('export', Icons.share_rounded, 'Export Chat'),
+              _buildMenuItem('history', Icons.history_rounded, 'Chat History'),
+              if (_chatService.isConversationPersisted) _buildMenuItem('reload', Icons.refresh_rounded, 'Reload'),
+              _buildMenuItem('clear', Icons.clear_all_rounded, 'Clear Chat'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCharacterAvatar({double radius = 24}) {
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      decoration: BoxDecoration(
+        color: _getCategoryColor(widget.character.category).withOpacity(0.15),
+        borderRadius: BorderRadius.circular(radius * 0.6),
+        border: Border.all(
+          color: _getCategoryColor(widget.character.category).withOpacity(0.2),
+          width: 2,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          widget.character.name.isNotEmpty ? widget.character.name[0].toUpperCase() : '?',
+          style: TextStyle(
+            fontSize: radius * 0.75,
+            fontWeight: FontWeight.w700,
+            color: _getCategoryColor(widget.character.category),
+          ),
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _buildMenuItem(String value, IconData icon, String text) {
+    return PopupMenuItem(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: const Color(0xFF666666)),
+          const SizedBox(width: 12),
+          Text(text, style: const TextStyle(fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
+  void _handleMenuAction(String value) {
+    switch (value) {
+      case 'streaming':
+        _toggleStreaming();
+        break;
+      case 'export':
+        _exportConversation();
+        break;
+      case 'history':
+        _goToHistory();
+        break;
+      case 'clear':
+        _clearConversation();
+        break;
+      case 'reload':
+        _reloadConversation();
+        break;
+    }
+  }
+
+  Widget _buildConversationInfo() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2196F3).withOpacity(0.05),
+        border: Border(
+          bottom: BorderSide(color: const Color(0xFF2196F3).withOpacity(0.1)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2196F3).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.save_rounded,
+              size: 14,
+              color: Color(0xFF2196F3),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Conversation saved • ${_chatService.messageCount} messages',
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF2196F3),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2196F3).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              _isExistingConversation ? 'Resumed' : 'Auto-saved',
+              style: const TextStyle(
+                fontSize: 11,
+                color: Color(0xFF2196F3),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -438,9 +444,7 @@ class _ChatPageState extends State<ChatPage> {
         final messages = snapshot.data ?? [];
         
         if (messages.isEmpty) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.teal),
-          );
+          return _buildEmptyState();
         }
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -449,7 +453,7 @@ class _ChatPageState extends State<ChatPage> {
 
         return ListView.builder(
           controller: _scrollController,
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
           itemCount: messages.length,
           itemBuilder: (context, index) {
             final message = messages[index];
@@ -463,12 +467,56 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: _getCategoryColor(widget.character.category).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Icon(
+                Icons.psychology_rounded,
+                size: 40,
+                color: _getCategoryColor(widget.character.category),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Start your conversation with\n${widget.character.name}',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A1A),
+                letterSpacing: -0.3,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ask questions or just say hello!',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+                letterSpacing: -0.1,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildMessageBubble(Message message, {bool isStreaming = false}) {
     return GestureDetector(
       onLongPress: () => _showMessageOptions(message),
-      onTap: message.hasImage && message.imageUrl != null 
-          ? () => _showImagePreview(message.imageUrl!, message.content)
-          : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         child: Row(
@@ -478,44 +526,35 @@ class _ChatPageState extends State<ChatPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (!message.isFromUser) ...[
-              CircleAvatar(
-                radius: 16,
-                backgroundImage: widget.character.imageUrl?.isNotEmpty == true
-                    ? NetworkImage(widget.character.imageUrl!)
-                    : null,
-                backgroundColor: Colors.teal.shade100,
-                child: widget.character.imageUrl?.isEmpty ?? true
-                    ? Text(
-                        widget.character.name[0],
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.teal.shade700,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 8),
+              _buildCharacterAvatar(radius: 18),
+              const SizedBox(width: 12),
             ],
             Flexible(
               child: Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: message.isFromUser
-                      ? Colors.teal
-                      : Colors.grey.shade100,
+                      ? _getCategoryColor(widget.character.category)
+                      : Colors.white,
                   borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(12),
-                    topRight: const Radius.circular(12),
+                    topLeft: const Radius.circular(18),
+                    topRight: const Radius.circular(18),
                     bottomLeft: message.isFromUser
-                        ? const Radius.circular(12)
-                        : const Radius.circular(4),
+                        ? const Radius.circular(18)
+                        : const Radius.circular(6),
                     bottomRight: message.isFromUser
-                        ? const Radius.circular(4)
-                        : const Radius.circular(12),
+                        ? const Radius.circular(6)
+                        : const Radius.circular(18),
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(message.isFromUser ? 0.08 : 0.04),
+                      blurRadius: message.isFromUser ? 8 : 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                   border: isStreaming 
-                      ? Border.all(color: Colors.teal.withOpacity(0.3), width: 1)
+                      ? Border.all(color: _getCategoryColor(widget.character.category).withOpacity(0.3), width: 1)
                       : null,
                 ),
                 child: Column(
@@ -528,170 +567,87 @@ class _ChatPageState extends State<ChatPage> {
                             message.senderName,
                             style: TextStyle(
                               fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.teal.shade700,
+                              fontWeight: FontWeight.w700,
+                              color: _getCategoryColor(widget.character.category),
+                              letterSpacing: 0.1,
                             ),
                           ),
                           if (isStreaming) ...[
                             const SizedBox(width: 8),
-                            SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation(Colors.teal.shade400),
-                              ),
+                            AnimatedBuilder(
+                              animation: _typingAnimationController,
+                              builder: (context, child) {
+                                return Row(
+                                  children: List.generate(3, (index) {
+                                    final delay = index * 0.2;
+                                    final opacity = (0.4 + 0.6 * 
+                                      ((_typingAnimationController.value - delay).clamp(0.0, 1.0))).clamp(0.4, 1.0);
+                                    return Container(
+                                      margin: const EdgeInsets.only(right: 2),
+                                      child: Opacity(
+                                        opacity: opacity,
+                                        child: Text(
+                                          '●',
+                                          style: TextStyle(
+                                            color: _getCategoryColor(widget.character.category),
+                                            fontSize: 8,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                );
+                              },
                             ),
                           ],
                         ],
                       ),
-                    if (!message.isFromUser) const SizedBox(height: 4),
-                    
-                    // 📸 IMAGE DISPLAY
-                    if (message.hasImage && message.imageUrl != null) ...[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          constraints: const BoxConstraints(
-                            maxWidth: 250,
-                            maxHeight: 200,
-                          ),
-                          child: Stack(
-                            children: [
-                              Image.network(
-                                message.imageUrl!,
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                loadingBuilder: (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Container(
-                                    height: 150,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Center(
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          CircularProgressIndicator(
-                                            value: loadingProgress.expectedTotalBytes != null
-                                                ? loadingProgress.cumulativeBytesLoaded / 
-                                                  loadingProgress.expectedTotalBytes!
-                                                : null,
-                                            color: Colors.teal,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Loading image...',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey.shade600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    height: 150,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.error, color: Colors.red, size: 32),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Failed to load image',
-                                          style: TextStyle(color: Colors.red, fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                              // Image overlay for tap indication
-                              Positioned.fill(
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    color: Colors.black.withOpacity(0.1),
-                                  ),
-                                  child: const Center(
-                                    child: Icon(
-                                      Icons.zoom_in,
-                                      color: Colors.white,
-                                      size: 32,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (message.content.isNotEmpty) const SizedBox(height: 8),
-                    ],
+                    if (!message.isFromUser) const SizedBox(height: 8),
                     
                     // TEXT CONTENT
-                    if (message.content.isNotEmpty || (!message.hasImage && isStreaming))
-                      Text(
-                        message.content.isEmpty && isStreaming 
-                            ? (message.hasImage ? "Analyzing image..." : "Thinking...") 
-                            : message.content,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: message.isFromUser
-                              ? Colors.white
-                              : message.content.isEmpty && isStreaming
-                                  ? Colors.grey.shade600
-                                  : Colors.black87,
-                          height: 1.4,
-                          fontStyle: message.content.isEmpty && isStreaming 
-                              ? FontStyle.italic 
-                              : FontStyle.normal,
-                        ),
+                    Text(
+                      message.content.isEmpty && isStreaming 
+                          ? "Thinking..." 
+                          : message.content,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: message.isFromUser
+                            ? Colors.white
+                            : message.content.isEmpty && isStreaming
+                                ? Colors.grey.shade600
+                                : const Color(0xFF1A1A1A),
+                        height: 1.5,
+                        letterSpacing: -0.1,
+                        fontStyle: message.content.isEmpty && isStreaming 
+                            ? FontStyle.italic 
+                            : FontStyle.normal,
                       ),
+                    ),
                       
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Text(
-                              _formatTime(message.timestamp),
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: message.isFromUser
-                                    ? Colors.white70
-                                    : Colors.grey.shade600,
-                              ),
-                            ),
-                            if (message.hasImage) ...[
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.image,
-                                size: 12,
-                                color: message.isFromUser
-                                    ? Colors.white70
-                                    : Colors.grey.shade600,
-                              ),
-                            ],
-                          ],
+                        Text(
+                          _formatTime(message.timestamp),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: message.isFromUser
+                                ? Colors.white.withOpacity(0.8)
+                                : Colors.grey.shade500,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                         if (isStreaming)
                           Text(
-                            message.hasImage ? 'Analyzing...' : 'Generating...',
+                            'Generating...',
                             style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.teal.shade400,
+                              fontSize: 11,
+                              color: message.isFromUser 
+                                  ? Colors.white.withOpacity(0.8)
+                                  : _getCategoryColor(widget.character.category),
                               fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                       ],
@@ -701,14 +657,18 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
             if (message.isFromUser) ...[
-              const SizedBox(width: 8),
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: Colors.teal.shade100,
-                child: Icon(
-                  Icons.person,
-                  size: 16,
-                  color: Colors.teal.shade700,
+              const SizedBox(width: 12),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2196F3).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.person_rounded,
+                  size: 18,
+                  color: Color(0xFF2196F3),
                 ),
               ),
             ],
@@ -718,53 +678,45 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _showImagePreview(String imageUrl, String caption) {
-    showDialog(
+  void _showMessageOptions(Message message) {
+    showModalBottomSheet(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Stack(
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Center(
-              child: InteractiveViewer(
-                child: Image.network(
-                  imageUrl,
-                  fit: BoxFit.contain,
-                ),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            Positioned(
-              top: 40,
-              right: 20,
-              child: IconButton(
-                onPressed: () => Navigator.pop(context),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black54,
-                  foregroundColor: Colors.white,
-                ),
-                icon: const Icon(Icons.close),
-              ),
+            const SizedBox(height: 24),
+            _buildOptionTile(
+              icon: Icons.copy_rounded,
+              title: 'Copy Message',
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: message.content));
+                Navigator.pop(context);
+                _showSuccessSnackBar('Message copied!');
+              },
             ),
-            if (caption.isNotEmpty)
-              Positioned(
-                bottom: 40,
-                left: 20,
-                right: 20,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    caption,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
+            if (!message.isFromUser)
+              _buildOptionTile(
+                icon: Icons.share_rounded,
+                title: 'Share Response',
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSuccessSnackBar('Share feature coming soon!');
+                },
               ),
           ],
         ),
@@ -772,157 +724,151 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  void _showMessageOptions(Message message) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  Widget _buildOptionTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: _getCategoryColor(widget.character.category).withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: _getCategoryColor(widget.character.category), size: 20),
       ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.copy),
-              title: const Text('Copy Message'),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: message.content));
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Message copied!')),
-                );
-              },
-            ),
-            if (message.hasImage && message.imageUrl != null)
-              ListTile(
-                leading: const Icon(Icons.image),
-                title: const Text('View Full Image'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showImagePreview(message.imageUrl!, message.content);
-                },
-              ),
-            if (!message.isFromUser)
-              ListTile(
-                leading: const Icon(Icons.share),
-                title: const Text('Share Response'),
-                onTap: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Share feature coming soon!')),
-                  );
-                },
-              ),
-          ],
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
         ),
       ),
+      onTap: onTap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
   }
 
   Widget _buildMessageInput() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
-      child: Row(
-        children: [
-          // 📸 IMAGE ATTACHMENT BUTTON
-          IconButton(
-            onPressed: _isSending ? null : _handleImageSelection,
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.grey.shade100,
-              foregroundColor: _isSending ? Colors.grey : Colors.teal,
-              shape: const CircleBorder(),
-            ),
-            icon: const Icon(Icons.image),
-            tooltip: 'Share Image',
-          ),
-          const SizedBox(width: 8),
-          // TEXT INPUT
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              enabled: !_isSending,
-              maxLines: null,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: _isSending 
-                    ? (_useStreaming ? 'Processing...' : 'Analyzing...')
-                    : 'Ask ${widget.character.name} or share an image...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FA),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: Colors.grey.withOpacity(0.2),
+                    width: 1,
+                  ),
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+                child: TextField(
+                  controller: _messageController,
+                  enabled: !_isSending,
+                  maxLines: null,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF1A1A1A),
+                    height: 1.4,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: _isSending 
+                        ? (_useStreaming ? 'Processing...' : 'Analyzing...')
+                        : 'Message ${widget.character.name}...',
+                    hintStyle: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 16,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    suffixIcon: _useStreaming 
+                        ? Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: Icon(
+                              Icons.stream_rounded,
+                              color: _getCategoryColor(widget.character.category).withOpacity(0.5),
+                              size: 18,
+                            ),
+                          )
+                        : null,
+                  ),
+                  onChanged: (value) {
+                    setState(() {});
+                  },
+                  onSubmitted: (text) {
+                    if (text.trim().isNotEmpty && !_isSending) {
+                      _sendMessage(text);
+                    }
+                  },
                 ),
-                suffixIcon: _useStreaming 
-                    ? Icon(Icons.stream, color: Colors.teal.shade300, size: 16)
-                    : null,
               ),
-              onChanged: (value) {
-                setState(() {}); // Trigger rebuild
-              },
-              onSubmitted: (text) {
-                if (text.trim().isNotEmpty && !_isSending) {
-                  _sendMessage(text);
-                }
-              },
             ),
-          ),
-          const SizedBox(width: 8),
-          // SEND BUTTON
-          _isSending
-              ? Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.teal.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.teal,
-                          strokeWidth: 2,
+            const SizedBox(width: 12),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _isSending
+                    ? _getCategoryColor(widget.character.category).withOpacity(0.1)
+                    : _messageController.text.trim().isNotEmpty 
+                        ? _getCategoryColor(widget.character.category)
+                        : Colors.grey[200],
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: _isSending
+                  ? Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: _getCategoryColor(widget.character.category),
+                            strokeWidth: 2,
+                          ),
                         ),
+                        if (_useStreaming)
+                          Icon(
+                            Icons.stream_rounded,
+                            size: 12,
+                            color: _getCategoryColor(widget.character.category),
+                          ),
+                      ],
+                    )
+                  : IconButton(
+                      onPressed: _messageController.text.trim().isNotEmpty && !_isSending
+                          ? () => _sendMessage(_messageController.text)
+                          : null,
+                      icon: Icon(
+                        _useStreaming ? Icons.stream_rounded : Icons.send_rounded,
+                        color: _messageController.text.trim().isNotEmpty 
+                            ? Colors.white 
+                            : Colors.grey[400],
+                        size: 20,
                       ),
-                      if (_useStreaming)
-                        Icon(
-                          Icons.stream,
-                          size: 12,
-                          color: Colors.teal.shade700,
-                        ),
-                    ],
-                  ),
-                )
-              : IconButton(
-                  onPressed: _messageController.text.trim().isNotEmpty && !_isSending
-                      ? () => _sendMessage(_messageController.text)
-                      : null,
-                  style: IconButton.styleFrom(
-                    backgroundColor: _messageController.text.trim().isNotEmpty 
-                        ? Colors.teal 
-                        : Colors.grey.shade300,
-                    foregroundColor: Colors.white,
-                    shape: const CircleBorder(),
-                  ),
-                  icon: Icon(_useStreaming ? Icons.stream : Icons.send),
-                ),
-        ],
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -931,6 +877,7 @@ class _ChatPageState extends State<ChatPage> {
     if (content.trim().isEmpty || _isSending) return;
 
     setState(() => _isSending = true);
+    _typingAnimationController.repeat();
     _messageController.clear();
     
     try {
@@ -945,12 +892,13 @@ class _ChatPageState extends State<ChatPage> {
       if (response != null) {
         _scrollToBottom();
       } else {
-        _showError('Failed to send message. Please try again.');
+        _showErrorSnackBar('Failed to send message. Please try again.');
       }
     } catch (e) {
-      _showError('Error sending message: $e');
+      _showErrorSnackBar('Error sending message: $e');
     } finally {
       setState(() => _isSending = false);
+      _typingAnimationController.stop();
     }
   }
 
@@ -964,6 +912,23 @@ class _ChatPageState extends State<ChatPage> {
         );
       }
     });
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'philosophy':
+        return const Color(0xFF2196F3);
+      case 'science':
+        return const Color(0xFF4CAF50);
+      case 'history':
+        return const Color(0xFFFF9800);
+      case 'literature':
+        return const Color(0xFF9C27B0);
+      case 'strategy':
+        return const Color(0xFFF44336);
+      default:
+        return const Color(0xFF607D8B);
+    }
   }
 
   String _formatTime(DateTime dateTime) {
@@ -981,12 +946,26 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _showError(String message) {
+  void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: _getCategoryColor(widget.character.category),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[600],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }

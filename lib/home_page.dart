@@ -1,9 +1,18 @@
-// home_page.dart - ENHANCED VERSION
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'package:myapp/pages/characters_page.dart';
 import 'package:myapp/pages/conversation_history_page.dart';
+import 'package:myapp/pages/profile_page.dart';
+import 'package:myapp/pages/chat_page.dart';
+import 'package:myapp/widgets/custom_card.dart';
+import 'package:myapp/widgets/activity_icon.dart';
+import 'package:myapp/services/conversation_service.dart';
+import 'package:myapp/services/groq_service.dart';
+import 'package:myapp/services/chat_service.dart';
+import 'package:myapp/models/character.dart';
 import 'auth/auth_service.dart';
-import 'auth/login_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,490 +23,739 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final AuthService _auth = AuthService();
-  Map<String, dynamic>? _userProfile;
-  bool _loading = true;
+  final ConversationService _conversationService = ConversationService();
+  final GroqService _groqService = GroqService();
+  final ChatService _chatService = ChatService();
+  final TextEditingController _messageController = TextEditingController();
+  
+  // User data
+  Map<String, dynamic>? userProfile;
+  bool loading = true;
+  int selectedIndex = 0;
+  
+  // Quote data
+  String dailyQuote = '';
+  String quoteAuthor = '';
+  bool quoteLoading = true;
+  
+  // Chat data
+  bool isSending = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _loadData();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    await Future.wait([
+      _loadUserData(),
+      _loadDailyQuote(),
+    ]);
   }
 
   Future<void> _loadUserData() async {
     try {
       final profile = await _auth.getCurrentUserProfile();
+      
       if (mounted) {
         setState(() {
-          _userProfile = profile;
-          _loading = false;
+          userProfile = profile;
+          loading = false;
         });
       }
     } catch (e) {
       print('Error loading user data: $e');
       if (mounted) {
-        setState(() => _loading = false);
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  Future<void> _loadDailyQuote() async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://api.quotable.io/random?maxLength=120'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            dailyQuote = data['content'] ?? 'Stay curious and keep learning.';
+            quoteAuthor = data['author'] ?? 'Unknown';
+            quoteLoading = false;
+          });
+        }
+      } else {
+        _setFallbackQuote();
+      }
+    } catch (e) {
+      print('Error loading quote: $e');
+      _setFallbackQuote();
+    }
+  }
+
+  void _setFallbackQuote() {
+    if (mounted) {
+      setState(() {
+        dailyQuote = 'The only way to do great work is to love what you do.';
+        quoteAuthor = 'Steve Jobs';
+        quoteLoading = false;
+      });
+    }
+  }
+
+  Future<void> _refreshQuote() async {
+    setState(() => quoteLoading = true);
+    await _loadDailyQuote();
+  }
+
+  void _shareQuote() {
+    final quoteText = '"$dailyQuote" - $quoteAuthor';
+    Clipboard.setData(ClipboardData(text: quoteText));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Quote copied to clipboard!'),
+        backgroundColor: Color(0xFF2196F3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+        margin: EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  Future<void> _sendQuickMessage() async {
+    if (_messageController.text.trim().isEmpty || isSending) return;
+
+    setState(() => isSending = true);
+    final message = _messageController.text.trim();
+    _messageController.clear();
+
+    try {
+      // Create a generic AI assistant character
+      final quickChatCharacter = Character(
+        id: 'ai_assistant',
+        name: 'AI Assistant',
+        description: 'A helpful AI assistant for quick questions',
+        category: 'General',
+        imageUrl: null,
+        promptStyle: 'You are a helpful AI assistant. Provide concise, accurate, and friendly responses.',
+      );
+
+      // Start a new conversation and navigate to chat page
+      await _navigateToQuickChat(quickChatCharacter, message);
+
+    } catch (e) {
+      if (mounted) {
+        setState(() => isSending = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _navigateToQuickChat(Character character, String initialMessage) async {
+    try {
+      // Navigate to chat page with the AI assistant character
+      if (mounted) {
+        setState(() => isSending = false);
+        
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChatPage(
+              character: character,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error navigating to chat: $e');
+      if (mounted) {
+        setState(() => isSending = false);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = _auth.currentUser;
-    
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        title: const Text(
-          "AI Advisor",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: _showProfileDialog,
-            tooltip: 'Profile',
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _showLogoutDialog,
-            tooltip: 'Logout',
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Colors.teal))
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: SafeArea(
+        child: loading 
+          ? const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
+              ),
+            )
           : RefreshIndicator(
-              color: Colors.teal,
-              onRefresh: _loadUserData,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildWelcomeCard(user),
-                    const SizedBox(height: 24),
-                    _buildStatsCards(),
-                    const SizedBox(height: 24),
-                    _buildQuickActions(),
-                    const SizedBox(height: 24),
-                    _buildRecentActivity(),
-                  ],
-                ),
+              onRefresh: _loadData,
+              color: const Color(0xFF2196F3),
+              child: CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildHeader(),
+                          const SizedBox(height: 24),
+                          _buildQuickChatSection(),
+                          const SizedBox(height: 24),
+                          _buildQuoteCard(),
+                          const SizedBox(height: 24),
+                          _buildQuickActions(),
+                          const SizedBox(height: 24),
+                          _buildCategoriesSection(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
+      ),
+      bottomNavigationBar: _buildBottomNavigation(),
     );
   }
 
-  Widget _buildWelcomeCard(user) {
+  Widget _buildHeader() {
+    final user = _auth.currentUser;
     final displayName = user?.displayName ?? 'Explorer';
-    final credits = _userProfile?['chatCredits'] ?? 0;
-    final userType = _userProfile?['userType'] ?? 'free';
+    final greeting = _getGreeting();
     
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.teal.shade400, Colors.teal.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.teal.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundColor: Colors.white,
-                backgroundImage: user?.photoURL != null
-                    ? NetworkImage(user!.photoURL!)
-                    : null,
-                child: user?.photoURL == null
-                    ? Icon(Icons.person, size: 35, color: Colors.teal.shade600)
-                    : null,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Welcome back, $displayName!",
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Ready to chat with history's greatest minds?",
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                    ),
-                  ],
+              Text(
+                '$greeting!',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
                 ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                displayName,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1A1A),
+                  letterSpacing: -0.5,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Chat Credits",
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
-                        fontSize: 12,
-                      ),
-                    ),
-                    Text(
-                      "$credits",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: userType == 'premium' ? Colors.amber : Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    userType.toUpperCase(),
-                    style: TextStyle(
-                      color: userType == 'premium' ? Colors.black : Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
+        ),
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2196F3).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ProfilePage()),
+              );
+            },
+            icon: const Icon(
+              Icons.person_rounded,
+              color: Color(0xFF2196F3),
+              size: 24,
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsCards() {
-    final totalChats = _userProfile?['totalChats'] ?? 0;
-    final totalMessages = _userProfile?['totalMessages'] ?? 0;
-    final favoriteCount = (_userProfile?['favoriteCharacters'] as List?)?.length ?? 0;
-
-    return Row(
-      children: [
-        Expanded(child: _buildStatCard("Conversations", "$totalChats", Icons.chat_bubble_outline, Colors.blue)),
-        const SizedBox(width: 12),
-        Expanded(child: _buildStatCard("Messages", "$totalMessages", Icons.message_outlined, Colors.green)),
-        const SizedBox(width: 12),
-        Expanded(child: _buildStatCard("Favorites", "$favoriteCount", Icons.favorite_outline, Colors.red)),
+        ),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+  Widget _buildQuickChatSection() {
+    return CustomCard(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.flash_on_rounded,
+                  color: Color(0xFF2196F3),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Quick Chat',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+                const Spacer(),
+                if (isSending)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF2196F3),
+                      strokeWidth: 2,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Message input
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F9FA),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _messageController,
+                      enabled: !isSending,
+                      maxLines: null,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        hintText: isSending 
+                            ? 'Starting chat...' 
+                            : 'Ask AI anything and start chatting...',
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        hintStyle: TextStyle(
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                      onSubmitted: (_) => _sendQuickMessage(),
+                    ),
+                  ),
+                  Container(
+                    margin: const EdgeInsets.all(4),
+                    child: GestureDetector(
+                      onTap: isSending ? null : _sendQuickMessage,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: isSending 
+                              ? Colors.grey[300]
+                              : (_messageController.text.trim().isNotEmpty 
+                                  ? const Color(0xFF2196F3)
+                                  : Colors.grey[300]),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.arrow_forward_rounded,
+                          color: isSending || _messageController.text.trim().isEmpty
+                              ? Colors.grey[500]
+                              : Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 12),
+            Text(
+              'Start a conversation with AI Assistant',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+        ),
       ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
+    );
+  }
+
+  Widget _buildQuoteCard() {
+    return CustomCard(
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(minHeight: 120),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF2196F3).withOpacity(0.8),
+              const Color(0xFF1976D2).withOpacity(0.9),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ],
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: quoteLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.format_quote,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: _refreshQuote,
+                        icon: const Icon(
+                          Icons.refresh_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        tooltip: 'New Quote',
+                      ),
+                      IconButton(
+                        onPressed: _shareQuote,
+                        icon: const Icon(
+                          Icons.share_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        tooltip: 'Share Quote',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Flexible(
+                    child: Text(
+                      dailyQuote,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Container(
+                        width: 3,
+                        height: 20,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          quoteAuthor,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
       ),
     );
   }
 
   Widget _buildQuickActions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "Quick Actions",
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
+    return CustomCard(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: _buildActionCard(
-                "Start Chatting",
-                "Explore conversations with historical figures",
-                Icons.psychology,
-                Colors.teal,
-                () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const CharactersPage()),
-                ),
+            const Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1A1A1A),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildActionCard(
-                "Browse All",
-                "View all available characters",
-                Icons.explore,
-                Colors.indigo,
-                () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const CharactersPage()),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    'Start Chat',
+                    Icons.chat_rounded,
+                    const Color(0xFF2196F3),
+                    () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const CharactersPage()),
+                      );
+                    },
+                  ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildActionButton(
+                    'History',
+                    Icons.history_rounded,
+                    const Color(0xFF4CAF50),
+                    () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ConversationHistoryPage()),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: color,
               ),
             ),
           ],
         ),
-        // Add to your _buildQuickActions method:
-Row(
-  children: [
-    Expanded(
-      child: _buildActionCard(
-        "Start Chatting",
-        "Explore conversations with historical figures",
-        Icons.psychology,
-        Colors.teal,
-        () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const CharactersPage()),
-        ),
       ),
-    ),
-    const SizedBox(width: 12),
-    Expanded(
-      child: _buildActionCard(
-        "Chat History",
-        "View your past conversations",
-        Icons.history,
-        Colors.indigo,
-        () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ConversationHistoryPage()),
-        ),
-      ),
-    ),
-  ],
-),
+    );
+  }
 
+  Widget _buildCategoriesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Explore Categories',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 100, // Fixed height to prevent overflow
+          child: GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 4,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: 1.0,
+            children: [
+              ActivityIcon(
+                icon: Icons.school_rounded,
+                label: 'Philosophy',
+                color: const Color(0xFF2196F3),
+                onTap: () => _navigateToCategory('Philosophy'),
+              ),
+              ActivityIcon(
+                icon: Icons.science_rounded,
+                label: 'Science',
+                color: const Color(0xFF4CAF50),
+                onTap: () => _navigateToCategory('Science'),
+              ),
+              ActivityIcon(
+                icon: Icons.history_edu_rounded,
+                label: 'History',
+                color: const Color(0xFFFF9800),
+                onTap: () => _navigateToCategory('History'),
+              ),
+              ActivityIcon(
+                icon: Icons.menu_book_rounded,
+                label: 'Literature',
+                color: const Color(0xFF9C27B0),
+                onTap: () => _navigateToCategory('Literature'),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildActionCard(String title, String subtitle, IconData icon, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.2)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-                height: 1.3,
-              ),
-            ),
-          ],
-        ),
+  void _navigateToCategory(String category) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CharactersPage(category: category),
       ),
     );
   }
 
-  Widget _buildRecentActivity() {
-    final lastActiveCharacter = _userProfile?['lastActiveCharacter'] ?? '';
-    final lastChatAt = _userProfile?['lastChatAt'];
-    
+  Widget _buildBottomNavigation() {
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Recent Activity",
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
+      child: SafeArea(
+        child: ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
           ),
-          const SizedBox(height: 12),
-          if (lastActiveCharacter.isNotEmpty) ...[
-            Row(
-              children: [
-                Icon(Icons.history, color: Colors.grey.shade500, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  "Last chat with $lastActiveCharacter",
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-              ],
-            ),
-            if (lastChatAt != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                "Active recently",
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade500,
-                ),
-              ),
-            ],
-          ] else ...[
-            Text(
-              "No recent activity. Start your first conversation!",
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  void _showProfileDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Profile"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_userProfile != null) ...[
-              Text("Name: ${_userProfile!['displayName'] ?? 'N/A'}"),
-              Text("Email: ${_userProfile!['email'] ?? 'N/A'}"),
-              Text("User Type: ${_userProfile!['userType'] ?? 'free'}"),
-              Text("Credits: ${_userProfile!['chatCredits'] ?? 0}"),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Close"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showLogoutDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Logout"),
-        content: const Text("Are you sure you want to logout?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _auth.signOut();
-              if (mounted) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginPage()),
-                );
+          child: BottomNavigationBar(
+            currentIndex: selectedIndex,
+            onTap: (index) {
+              if (index == 0) return; // Already on home
+              
+              switch (index) {
+                case 1:
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const CharactersPage()),
+                  );
+                  break;
+                case 2:
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ConversationHistoryPage()),
+                  );
+                  break;
+                case 3:
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ProfilePage()),
+                  );
+                  break;
               }
             },
-            child: const Text("Logout", style: TextStyle(color: Colors.red)),
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            selectedItemColor: const Color(0xFF2196F3),
+            unselectedItemColor: Colors.grey[400],
+            elevation: 0,
+            selectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 12,
+            ),
+            items: const [
+              BottomNavigationBarItem(
+                icon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.home_rounded, size: 24),
+                ),
+                label: 'Home',
+              ),
+              BottomNavigationBarItem(
+                icon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.people_rounded, size: 24),
+                ),
+                label: 'Characters',
+              ),
+              BottomNavigationBarItem(
+                icon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.history_rounded, size: 24),
+                ),
+                label: 'History',
+              ),
+              BottomNavigationBarItem(
+                icon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.person_rounded, size: 24),
+                ),
+                label: 'Profile',
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   }
 }

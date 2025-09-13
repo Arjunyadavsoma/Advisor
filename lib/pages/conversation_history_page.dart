@@ -1,5 +1,5 @@
-// lib/pages/conversation_history_page.dart - COMPLETE WITH SORTING
 import 'package:flutter/material.dart';
+import 'package:myapp/widgets/custom_card.dart';
 import '../models/conversation.dart';
 import '../models/character.dart';
 import '../services/conversation_service.dart';
@@ -21,7 +21,7 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
   List<Conversation> _conversations = [];
   bool _loading = true;
   bool _showBookmarkedOnly = false;
-  bool _newestFirst = true; // Show newest conversations first (default)
+  bool _newestFirst = true;
   String _searchQuery = '';
 
   @override
@@ -36,7 +36,6 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
     super.dispose();
   }
 
-  // Toggle sort order
   void _toggleSortOrder() {
     setState(() {
       _newestFirst = !_newestFirst;
@@ -52,7 +51,6 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
       
       if (_searchQuery.isNotEmpty) {
         conversations = await _conversationService.searchConversations(_searchQuery);
-        // Apply local sorting for search results
         if (_newestFirst) {
           conversations.sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
         } else {
@@ -61,7 +59,7 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
       } else {
         conversations = await _conversationService.getUserConversations(
           bookmarkedOnly: _showBookmarkedOnly,
-          newestFirst: _newestFirst, // Pass sort preference
+          newestFirst: _newestFirst,
         );
       }
       
@@ -81,201 +79,341 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Conversation History'),
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        actions: [
-          // Sort toggle button
-          IconButton(
-            icon: Icon(
-              _newestFirst ? Icons.arrow_downward : Icons.arrow_upward,
-              color: Colors.white,
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            _buildSearchSection(),
+            _buildFilterChips(),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _loadConversations,
+                color: const Color(0xFF2196F3),
+                child: _loading
+                    ? _buildLoadingState()
+                    : _conversations.isEmpty
+                        ? _buildEmptyState()
+                        : _buildConversationsList(),
+              ),
             ),
-            onPressed: _toggleSortOrder,
-            tooltip: _newestFirst ? 'Show Oldest First' : 'Show Newest First',
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                size: 20,
+                color: Color(0xFF2196F3),
+              ),
+            ),
           ),
-          // Bookmark filter button
-          IconButton(
-            icon: Icon(
-              _showBookmarkedOnly ? Icons.bookmark : Icons.bookmark_outline,
-              color: Colors.white,
+          const Expanded(
+            child: Center(
+              child: Text(
+                'Chat History',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1A1A),
+                  letterSpacing: -0.3,
+                ),
+              ),
             ),
-            onPressed: () {
+          ),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: Icon(
+                _newestFirst ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                size: 20,
+                color: const Color(0xFF2196F3),
+              ),
+              onPressed: _toggleSortOrder,
+              splashRadius: 20,
+              tooltip: _newestFirst ? 'Show Oldest First' : 'Show Newest First',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchSection() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Container(
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          style: const TextStyle(
+            fontSize: 16,
+            color: Color(0xFF1A1A1A),
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: InputDecoration(
+            hintText: 'Search conversations...',
+            hintStyle: TextStyle(
+              color: Colors.grey[500],
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+            ),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 16, right: 12),
+              child: Icon(
+                Icons.search_rounded,
+                color: Colors.grey[500],
+                size: 22,
+              ),
+            ),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: Colors.grey[500],
+                      size: 20,
+                    ),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                      _loadConversations();
+                    },
+                    splashRadius: 20,
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          ),
+          onChanged: (value) {
+            setState(() => _searchQuery = value);
+            if (value.isEmpty) {
+              _loadConversations();
+            } else {
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (_searchController.text == value) {
+                  _loadConversations();
+                }
+              });
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChips() {
+    return Container(
+      height: 70,
+      padding: const EdgeInsets.fromLTRB(20, 20, 0, 0),
+      child: Row(
+        children: [
+          _buildFilterChip(
+            label: _newestFirst ? 'Newest First' : 'Oldest First',
+            icon: _newestFirst ? Icons.schedule_rounded : Icons.history_rounded,
+            isSelected: false,
+            onTap: _toggleSortOrder,
+          ),
+          const SizedBox(width: 12),
+          _buildFilterChip(
+            label: 'Bookmarked',
+            icon: Icons.bookmark_rounded,
+            isSelected: _showBookmarkedOnly,
+            onTap: () {
               setState(() {
                 _showBookmarkedOnly = !_showBookmarkedOnly;
               });
               _loadConversations();
             },
-            tooltip: _showBookmarkedOnly ? 'Show All' : 'Show Bookmarked',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _buildSearchBar(),
-          // Sort indicator bar
-          if (_conversations.isNotEmpty) _buildSortIndicator(),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _loadConversations,
-              color: Colors.teal,
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: Colors.teal))
-                  : _conversations.isEmpty
-                      ? _buildEmptyState()
-                      : _buildConversationsList(),
-            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSearchBar() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.all(16),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Search conversations...',
-          prefixIcon: const Icon(Icons.search, color: Colors.teal),
-          suffixIcon: _searchQuery.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _searchQuery = '');
-                    _loadConversations();
-                  },
-                )
-              : null,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.teal, width: 2),
-          ),
+  Widget _buildFilterChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF2196F3) : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        onChanged: (value) {
-          setState(() => _searchQuery = value);
-          // Debounce search
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (_searchController.text == value) {
-              _loadConversations();
-            }
-          });
-        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? Colors.white : const Color(0xFF666666),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF666666),
+                letterSpacing: -0.1,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSortIndicator() {
-    return Container(
-      width: double.infinity,
-      color: Colors.teal.shade50,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Icon(
-            _newestFirst ? Icons.schedule : Icons.history,
-            size: 16,
-            color: Colors.teal.shade600,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Sorted by: ${_newestFirst ? 'Most Recent First' : 'Oldest First'}',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.teal.shade600,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const Spacer(),
-          if (_showBookmarkedOnly)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.bookmark, size: 12, color: Colors.teal.shade600),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Bookmarked Only',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.teal.shade600,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
+  Widget _buildLoadingState() {
+    return const Center(
+      child: CircularProgressIndicator(
+        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
       ),
     );
   }
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            _showBookmarkedOnly ? Icons.bookmark_outline : Icons.chat_bubble_outline,
-            size: 64,
-            color: Colors.grey.shade400,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _showBookmarkedOnly 
-                ? 'No bookmarked conversations yet'
-                : _searchQuery.isNotEmpty
-                    ? 'No conversations found'
-                    : 'No conversations yet',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _showBookmarkedOnly
-                ? 'Bookmark conversations by tapping the bookmark icon'
-                : _searchQuery.isNotEmpty
-                    ? 'Try different keywords or clear the search'
-                    : 'Start chatting with characters to see your conversations here',
-            style: TextStyle(
-              color: Colors.grey.shade500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          if (!_showBookmarkedOnly && _searchQuery.isEmpty) ...[
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                foregroundColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2196F3).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: const Text('Start Chatting'),
+              child: Icon(
+                _showBookmarkedOnly 
+                    ? Icons.bookmark_outline_rounded 
+                    : Icons.chat_bubble_outline_rounded,
+                size: 40,
+                color: const Color(0xFF2196F3),
+              ),
             ),
+            const SizedBox(height: 24),
+            Text(
+              _showBookmarkedOnly 
+                  ? 'No bookmarked chats'
+                  : _searchQuery.isNotEmpty
+                      ? 'No conversations found'
+                      : 'No conversations yet',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A1A),
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _showBookmarkedOnly
+                  ? 'Bookmark conversations by tapping the bookmark icon during chats'
+                  : _searchQuery.isNotEmpty
+                      ? 'Try different keywords or clear the search'
+                      : 'Start chatting with AI characters to see your conversations here',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+                letterSpacing: -0.1,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (!_showBookmarkedOnly && _searchQuery.isEmpty) ...[
+              const SizedBox(height: 32),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2196F3),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                  ),
+                  child: const Text(
+                    'Start Chatting',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildConversationsList() {
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
       itemCount: _conversations.length,
       itemBuilder: (context, index) {
         final conversation = _conversations[index];
@@ -287,154 +425,218 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
   Widget _buildConversationCard(Conversation conversation, int index) {
     final isRecent = DateTime.now().difference(conversation.lastMessageAt).inHours < 24;
     
-    return Card(
-      elevation: isRecent ? 3 : 2,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: isRecent 
-            ? BorderSide(color: Colors.teal.withOpacity(0.3), width: 1)
-            : BorderSide.none,
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: Stack(
-          children: [
-            FutureBuilder<Character?>(
-              future: _getCharacterInfo(conversation.characterId),
-              builder: (context, snapshot) {
-                final character = snapshot.data;
-                return CircleAvatar(
-                  radius: 24,
-                  backgroundColor: Colors.teal.shade100,
-                  backgroundImage: character?.imageUrl?.isNotEmpty == true
-                      ? NetworkImage(character!.imageUrl!)
-                      : null,
-                  child: character?.imageUrl?.isEmpty ?? true
-                      ? Text(
-                          character?.name.isNotEmpty == true 
-                              ? character!.name[0].toUpperCase() 
-                              : '?',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.teal.shade700,
+    return Padding(
+      padding: EdgeInsets.only(bottom: index == _conversations.length - 1 ? 0 : 16),
+      child: CustomCard(
+        onTap: () => _openConversation(conversation),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Stack(
+                    children: [
+                      FutureBuilder<Character?>(
+                        future: _getCharacterInfo(conversation.characterId),
+                        builder: (context, snapshot) {
+                          final character = snapshot.data;
+                          return Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2196F3).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(14),
+                              image: character?.imageUrl?.isNotEmpty == true
+                                  ? DecorationImage(
+                                      image: NetworkImage(character!.imageUrl!),
+                                      fit: BoxFit.cover,
+                                    )
+                                  : null,
+                            ),
+                            child: character?.imageUrl?.isEmpty ?? true
+                                ? Center(
+                                    child: Text(
+                                      character?.name.isNotEmpty == true 
+                                          ? character!.name[0].toUpperCase() 
+                                          : '?',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF2196F3),
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                          );
+                        },
+                      ),
+                      if (isRecent)
+                        Positioned(
+                          right: -2,
+                          top: -2,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4CAF50),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
                           ),
-                        )
-                      : null,
-                );
-              },
-            ),
-            // Recent indicator
-            if (isRecent)
-              Positioned(
-                right: 0,
-                top: 0,
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: Colors.green,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
+                        ),
+                    ],
                   ),
-                ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                conversation.title,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: isRecent ? FontWeight.w700 : FontWeight.w600,
+                                  color: const Color(0xFF1A1A1A),
+                                  letterSpacing: -0.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (conversation.isBookmarked)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2196F3).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Icon(
+                                  Icons.bookmark_rounded,
+                                  size: 14,
+                                  color: Color(0xFF2196F3),
+                                ),
+                              ),
+                          ],
+                        ),
+                        if (conversation.preview != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            conversation.preview!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              height: 1.3,
+                              letterSpacing: -0.1,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    onSelected: (value) => _handleMenuAction(value, conversation),
+                    icon: Icon(
+                      Icons.more_vert_rounded,
+                      color: Colors.grey[500],
+                      size: 20,
+                    ),
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'bookmark',
+                        child: Row(
+                          children: [
+                            Icon(
+                              conversation.isBookmarked 
+                                  ? Icons.bookmark_remove_rounded 
+                                  : Icons.bookmark_add_rounded,
+                              size: 18,
+                              color: const Color(0xFF2196F3),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              conversation.isBookmarked 
+                                  ? 'Remove Bookmark' 
+                                  : 'Add Bookmark',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              size: 18,
+                              color: Colors.red[600],
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Delete',
+                              style: TextStyle(
+                                color: Colors.red[600],
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-          ],
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                conversation.title,
-                style: TextStyle(
-                  fontWeight: isRecent ? FontWeight.bold : FontWeight.w600,
-                  fontSize: 14,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (conversation.isBookmarked)
-              Icon(Icons.bookmark, color: Colors.teal, size: 16),
-          ],
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (conversation.preview != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                conversation.preview!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 13,
-                ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _buildStatChip(
+                    icon: Icons.message_rounded,
+                    text: '${conversation.messageCount} messages',
+                    color: const Color(0xFF666666),
+                  ),
+                  const SizedBox(width: 16),
+                  _buildStatChip(
+                    icon: Icons.access_time_rounded,
+                    text: _formatDate(conversation.lastMessageAt),
+                    color: isRecent ? const Color(0xFF2196F3) : const Color(0xFF666666),
+                  ),
+                ],
               ),
             ],
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.message, size: 14, color: Colors.grey.shade500),
-                const SizedBox(width: 4),
-                Text(
-                  '${conversation.messageCount} messages',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Icon(Icons.access_time, size: 14, color: Colors.grey.shade500),
-                const SizedBox(width: 4),
-                Text(
-                  _formatDate(conversation.lastMessageAt),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isRecent ? Colors.teal.shade600 : Colors.grey.shade500,
-                    fontWeight: isRecent ? FontWeight.w500 : FontWeight.normal,
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handleMenuAction(value, conversation),
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              value: 'bookmark',
-              child: Row(
-                children: [
-                  Icon(
-                    conversation.isBookmarked 
-                        ? Icons.bookmark_remove 
-                        : Icons.bookmark_add,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(conversation.isBookmarked 
-                      ? 'Remove Bookmark' 
-                      : 'Add Bookmark'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Row(
-                children: [
-                  Icon(Icons.delete, size: 18, color: Colors.red),
-                  SizedBox(width: 8),
-                  Text('Delete', style: TextStyle(color: Colors.red)),
-                ],
-              ),
-            ),
-          ],
-        ),
-        onTap: () => _openConversation(conversation),
       ),
+    );
+  }
+
+  Widget _buildStatChip({
+    required IconData icon,
+    required String text,
+    required Color color,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w500,
+            letterSpacing: -0.1,
+          ),
+        ),
+      ],
     );
   }
 
@@ -458,21 +660,10 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
               _conversations[index] = conversation.copyWith(isBookmarked: newStatus);
             }
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(newStatus ? 'Bookmarked!' : 'Bookmark removed'),
-              backgroundColor: Colors.teal,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          
+          _showSuccessSnackBar(newStatus ? 'Bookmarked!' : 'Bookmark removed');
         } catch (e) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error updating bookmark: $e'),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          _showErrorSnackBar('Error updating bookmark: $e');
         }
         break;
       case 'delete':
@@ -481,57 +672,105 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
     }
   }
 
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: const Color(0xFF2196F3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[600],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
   void _showDeleteDialog(Conversation conversation) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Conversation'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Delete Conversation',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Are you sure you want to delete this conversation?'),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '"${conversation.title}"',
+                style: const TextStyle(
+                  fontStyle: FontStyle.italic,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Text(
-              '"${conversation.title}"',
-              style: const TextStyle(
-                fontStyle: FontStyle.italic,
+              'This action cannot be undone.',
+              style: TextStyle(
+                color: Colors.red[600],
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 8),
-            const Text('This action cannot be undone.'),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
               try {
                 await _conversationService.deleteConversation(conversation.id);
                 _loadConversations();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Conversation deleted'),
-                    backgroundColor: Colors.red,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                _showSuccessSnackBar('Conversation deleted');
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error deleting conversation: $e'),
-                    backgroundColor: Colors.red,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                _showErrorSnackBar('Error deleting conversation: $e');
               }
             },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[600],
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'Delete',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -541,7 +780,7 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
   void _openConversation(Conversation conversation) async {
     try {
       final character = await _getCharacterInfo(conversation.characterId);
-      if (character != null) {
+      if (character != null && mounted) {
         final result = await Navigator.push(
           context,
           MaterialPageRoute(
@@ -552,27 +791,14 @@ class _ConversationHistoryPageState extends State<ConversationHistoryPage> {
           ),
         );
         
-        // Refresh conversations when returning from chat
         if (result == null) {
           _loadConversations();
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error: Character not found'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showErrorSnackBar('Character not found');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error opening conversation: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showErrorSnackBar('Error opening conversation: $e');
     }
   }
 

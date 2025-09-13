@@ -17,7 +17,6 @@ class ConversationService {
     try {
       final user = _authService.currentUser;
       if (user == null) {
-        print('❌ ConversationService: No authenticated user');
         return null;
       }
 
@@ -26,7 +25,6 @@ class ConversationService {
           ? '${firstMessage.substring(0, 100)}...' 
           : firstMessage;
 
-      print('📝 ConversationService: Creating conversation for ${user.email}');
 
       final response = await _client.from('conversations').insert({
         'user_id': user.uid,
@@ -37,10 +35,8 @@ class ConversationService {
         'last_message_at': DateTime.now().toIso8601String(),
       }).select().single();
 
-      print('✅ ConversationService: Created conversation ${response['id']}');
       return Conversation.fromMap(response);
     } catch (e) {
-      print('❌ ConversationService: Error creating conversation: $e');
       return null;
     }
   }
@@ -51,7 +47,6 @@ class ConversationService {
     required Message message,
   }) async {
     try {
-      print('💾 ConversationService: Saving message (hasImage: ${message.hasImage})');
       
       // Save message with all fields including image data
       await _client.from('conversation_messages').insert({
@@ -67,7 +62,6 @@ class ConversationService {
         'has_image': message.hasImage,
       });
 
-      print('✅ ConversationService: Message saved to database');
 
       // Update conversation metadata with image-aware preview
       String newPreview;
@@ -87,9 +81,7 @@ class ConversationService {
         'last_message_at': DateTime.now().toIso8601String(),
       }).match({'id': conversationId});
 
-      print('✅ ConversationService: Conversation metadata updated');
     } catch (e) {
-      print('❌ ConversationService: Error saving message: $e');
     }
   }
 
@@ -103,11 +95,9 @@ class ConversationService {
     try {
       final user = _authService.currentUser;
       if (user == null) {
-        print('❌ ConversationService: No authenticated user for conversations');
         return [];
       }
 
-      print('📋 ConversationService: Fetching conversations for user ${user.uid}');
 
       var query = _client
           .from('conversations')
@@ -127,10 +117,8 @@ class ConversationService {
           .map((e) => Conversation.fromMap(e as Map<String, dynamic>))
           .toList();
 
-      print('✅ ConversationService: Found ${conversations.length} conversations');
       return conversations;
     } catch (e) {
-      print('❌ ConversationService: Error fetching conversations: $e');
       return [];
     }
   }
@@ -138,7 +126,6 @@ class ConversationService {
   /// Get conversation messages with proper ordering (WITH IMAGE SUPPORT)
   Future<List<Message>> getConversationMessages(String conversationId) async {
     try {
-      print('📨 ConversationService: Fetching messages for conversation $conversationId');
       
       final response = await _client
           .from('conversation_messages')
@@ -161,10 +148,8 @@ class ConversationService {
               ))
           .toList();
 
-      print('✅ ConversationService: Found ${messages.length} messages (${messages.where((m) => m.hasImage).length} with images)');
       return messages;
     } catch (e) {
-      print('❌ ConversationService: Error fetching messages: $e');
       return [];
     }
   }
@@ -185,10 +170,8 @@ class ConversationService {
           .update({'is_bookmarked': newStatus})
           .eq('id', conversationId);
 
-      print('✅ ConversationService: Bookmark toggled to $newStatus');
       return newStatus;
     } catch (e) {
-      print('❌ ConversationService: Error toggling bookmark: $e');
       return false;
     }
   }
@@ -201,9 +184,7 @@ class ConversationService {
           .delete()
           .eq('id', conversationId);
       
-      print('✅ ConversationService: Conversation deleted');
     } catch (e) {
-      print('❌ ConversationService: Error deleting conversation: $e');
     }
   }
 
@@ -213,7 +194,6 @@ class ConversationService {
       final user = _authService.currentUser;
       if (user == null) return [];
 
-      print('🔍 ConversationService: Searching conversations for: "$query"');
 
       // Try database search first
       try {
@@ -228,10 +208,8 @@ class ConversationService {
             .map((e) => Conversation.fromMap(e as Map<String, dynamic>))
             .toList();
         
-        print('✅ ConversationService: Database search found ${results.length} results');
         return results;
       } catch (e) {
-        print('⚠️  Database search failed, falling back to local search: $e');
         
         // Fallback: get all conversations and filter locally
         final allConversations = await getUserConversations();
@@ -241,11 +219,9 @@ class ConversationService {
           (conv.preview?.toLowerCase().contains(query.toLowerCase()) ?? false)
         ).toList();
         
-        print('✅ ConversationService: Local search found ${results.length} results');
         return results;
       }
     } catch (e) {
-      print('❌ ConversationService: Error searching conversations: $e');
       return [];
     }
   }
@@ -261,7 +237,6 @@ class ConversationService {
 
       return Conversation.fromMap(response);
     } catch (e) {
-      print('❌ ConversationService: Error fetching conversation by ID: $e');
       return null;
     }
   }
@@ -277,9 +252,7 @@ class ConversationService {
           })
           .eq('id', conversationId);
       
-      print('✅ ConversationService: Updated conversation title');
     } catch (e) {
-      print('❌ ConversationService: Error updating title: $e');
     }
   }
 
@@ -296,7 +269,6 @@ class ConversationService {
 
       return (response as List<dynamic>).length;
     } catch (e) {
-      print('❌ ConversationService: Error getting conversation count: $e');
       return 0;
     }
   }
@@ -336,7 +308,6 @@ class ConversationService {
 
       return conversationsWithImages;
     } catch (e) {
-      print('❌ ConversationService: Error getting conversations with images: $e');
       return [];
     }
   }
@@ -354,7 +325,6 @@ class ConversationService {
       await _client.from('conversations').select('id').limit(1);
       return true;
     } catch (e) {
-      print('❌ ConversationService: Connection test failed: $e');
       return false;
     }
   }
