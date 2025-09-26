@@ -44,9 +44,9 @@ A sophisticated Flutter application that enables users to engage in meaningful c
 
 ## 📱 Screenshots
 
-Login Screen                                            |  Character Selection                                     |  User Profile                                            |  Settings/Preferences                                  
---------------------------------------------------------+----------------------------------------------------------+----------------------------------------------------------+--------------------------------------------------------
-<img src="Screenshot_20250927_045541.jpg" width="200">  |  <img src="Screenshot_20250927_045559.jpg" width="200">  |  <img src="Screenshot_20250927_050236.jpg" width="200">  |  <img src="Screenshot_20250927_050232.jpg" width="200">
+Login Screen                                            |  Character Selection                                     |  User Profile                                            |                                  
+--------------------------------------------------------+----------------------------------------------------------+----------------------------------------------------------+
+<img src="Screenshot_20250927_045541.jpg" width="200">  |  <img src="Screenshot_20250927_045559.jpg" width="200">  |  <img src="Screenshot_20250927_050236.jpg" width="200">  | 
 - **Frontend**: Flutter & Dart
 - **Authentication**: Firebase Authentication
 - **Backend**: Firebase (Firestore/Realtime Database)
