@@ -46,7 +46,7 @@ A sophisticated Flutter application that enables users to engage in meaningful c
 
 | Login Screen | Character Selection | User Profile | Chat Interface |
 |:---:|:---:|:---:|:---:|
-| ![Login](Screenshot_20250927_045541.jpg5shot_20250927_050 🛠️ Tech Stack
+| ![Login](Screenshot_20250927_045541.jpg) 🛠️ Tech Stack
 
 - **Frontend**: Flutter & Dart
 - **Authentication**: Firebase Authentication
